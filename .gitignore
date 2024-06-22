@@ -6,6 +6,7 @@ pytorch_env
 models
 build
 correlation.egg-info
+demo-frame
 my_demo
 my_demo_frame
 video.mp4

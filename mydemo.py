@@ -63,7 +63,7 @@ def feature_aggregation(frames : torch.Tensor, feature_maps : torch.Tensor, raft
             # 1, c, h, w
             f_ji = feature_warp(feature_maps[j:j+1], flow_ji)
             # 1, emb
-            f_ji_emb, f_i_emb = feature_embedding(f_ji, feature_maps[i:i+1])
+            f_ji_emb, f_i_emb = feature_embedding(f_ji), feature_embedding(feature_maps[i:i+1])
             # 1
             w_ji = torch.exp(torch.sum(f_ji_emb * f_i_emb) / (torch.norm(f_ji_emb, p = 2) *  torch.norm(f_i_emb, p = 2)))
             w_ji.reshape(1, 1, 1, 1)
@@ -103,6 +103,22 @@ class Feature2Class(nn.Module):
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.fc(x)
+        return x
+
+class FeatureEmbedding(nn.Module):
+    def __init__(self, in_channels, out_channels) -> None:
+        super(FeatureEmbedding, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, 512, kernel_size=1, stride=1, padding=0),
+            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(512, out_channels, kernel_size=1, stride=1, padding=0)
+        )
+        self.avgpool = nn.AdaptiveAvgPool2d((1,1))
+
+    def forward(self, x : torch.Tensor):
+        x = self.conv(x)
+        x = self.avgpool(x)
+        x = x.squeeze(-1).squeeze(-1)
         return x
     
 if __name__ == '__main__':
