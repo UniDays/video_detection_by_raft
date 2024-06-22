@@ -51,24 +51,25 @@ def feature_warp(f_k : torch.Tensor, flow : torch.Tensor):
 
     return f_i
 
-def feature_aggregation(frames : torch.Tensor, feature_maps : torch.Tensor, raft : nn.Module, feature_embedding : nn.Module, K = 10):
-    N, C, H, W = frames.shape
-    n, c, h, w = feature_maps.shape
+def feature_aggregation(frames : torch.Tensor, feature_encoder : nn.Module, flow_net : nn.Module, feature_embedding : nn.Module, K = 10):
+    frames = frames.to(DEVICE)
+    feature_maps = feature_encoder(frames)
+    N, C, _, _ = feature_maps.shape
     f_i_aggregation_list = []
     for i in range(N):
         w_list = []
         f_list = []
         for j in range(max(0, i - K), min(N, i + K + 1)):
-            flow_ji = raft(frames[j:j+1], frames[i:i+1])
+            pad_frames = torch.cat([frames[j:j+1], frames[i:i+1]], dim=1)
+            flow_ji = flow_net(pad_frames)
             # 1, c, h, w
             f_ji = feature_warp(feature_maps[j:j+1], flow_ji)
             # 1, emb
             f_ji_emb, f_i_emb = feature_embedding(f_ji), feature_embedding(feature_maps[i:i+1])
             # 1
-            w_ji = torch.exp(torch.sum(f_ji_emb * f_i_emb) / (torch.norm(f_ji_emb, p = 2) *  torch.norm(f_i_emb, p = 2)))
-            w_ji.reshape(1, 1, 1, 1)
+            w_ji = torch.exp(torch.sum(f_ji_emb * f_i_emb) / (torch.norm(f_ji_emb, p = 2) *  torch.norm(f_i_emb, p = 2))).reshape(1, 1, 1, 1)
             # 1, c, 1, 1
-            w_ji.repeat(1, c, 1, 1)
+            w_ji.repeat(1, C, 1, 1)
             f_list.append(f_ji)
             w_list.append(w_ji)
         # 2K, c, h, w
@@ -78,11 +79,10 @@ def feature_aggregation(frames : torch.Tensor, feature_maps : torch.Tensor, raft
         # 1, c, h, w
         f_i_aggregation = torch.sum(f * w / torch.sum(w), dim = 0, keepdim=True)
         f_i_aggregation_list.append(f_i_aggregation)
-    feature_map_aggregation = torch.concatenate(f_i_aggregation_list)
 
+    feature_map_aggregation = torch.concatenate(f_i_aggregation_list)
     return feature_map_aggregation
 
-        
 
 class FeatureExtractor(nn.Module):
     def __init__(self, model : nn.Module) -> None:
@@ -119,6 +119,17 @@ class FeatureEmbedding(nn.Module):
         x = self.conv(x)
         x = self.avgpool(x)
         x = x.squeeze(-1).squeeze(-1)
+        return x
+    
+class FeatureNet(nn.Module):
+    def __init__(self, feature_encoder, flow_net, feature_embedding):
+        super(FeatureNet, self).__init__()
+        self.feature_encoder = feature_encoder
+        self.flow_net = flow_net
+        self.feature_embedding = feature_embedding
+
+    def forward(self, x):
+        x = feature_aggregation(x, self.feature_encoder, self.flow_net, self.feature_embedding)
         return x
     
 if __name__ == '__main__':
