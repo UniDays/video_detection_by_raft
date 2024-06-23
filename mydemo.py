@@ -53,36 +53,39 @@ def feature_warp(f_k : torch.Tensor, flow : torch.Tensor):
 
 def feature_aggregation(frames : torch.Tensor, feature_encoder : nn.Module, flow_net : nn.Module, feature_embedding : nn.Module, K = 10):
     frames = frames.to(DEVICE)
-    feature_maps = feature_encoder(frames)
-    N, C, _, _ = feature_maps.shape
-    f_i_aggregation_list = []
-    for i in range(N):
-        w_list = []
-        f_list = []
-        for j in range(max(0, i - K), min(N, i + K + 1)):
-            pad_frames = torch.cat([frames[j:j+1], frames[i:i+1]], dim=1)
-            flow_ji = flow_net(pad_frames)
+    # [tensor(N,C,H,W)]
+    feature_maps_list = feature_encoder(frames)
+    feature_maps_aggregation_list = []
+    for feature_maps in feature_maps_list:
+        # N, C, H, W
+        N, C, _, _ = feature_maps.shape
+        f_i_aggregation_list = []
+        for i in range(N):
+            w_list = []
+            f_list = []
+            for j in range(max(0, i - K), min(N, i + K + 1)):
+                pad_frames = torch.cat([frames[j:j+1], frames[i:i+1]], dim=1)
+                flow_ji = flow_net(pad_frames)
+                # 1, c, h, w
+                f_ji = feature_warp(feature_maps[j:j+1], flow_ji)
+                # 1, emb
+                f_ji_emb, f_i_emb = feature_embedding(f_ji), feature_embedding(feature_maps[i:i+1])
+                # 1
+                # w_ji = torch.exp(torch.sum(f_ji_emb * f_i_emb) / (torch.norm(f_ji_emb, p = 2) *  torch.norm(f_i_emb, p = 2))).reshape(1, 1, 1, 1)
+                w_ji = torch.exp(F.cosine_similarity(f_ji_emb, f_i_emb)).reshape(1,1,1,1)
+                # 1, c, 1, 1
+                w_ji.repeat(1, C, 1, 1)
+                f_list.append(f_ji)
+                w_list.append(w_ji)
+            # 2K, c, h, w
+            f = torch.concatenate(f_list, dim=0)
+            # 2K, c, 1, 1
+            w = torch.concatenate(w_list, dim=0)
             # 1, c, h, w
-            f_ji = feature_warp(feature_maps[j:j+1], flow_ji)
-            # 1, emb
-            f_ji_emb, f_i_emb = feature_embedding(f_ji), feature_embedding(feature_maps[i:i+1])
-            # 1
-            w_ji = torch.exp(torch.sum(f_ji_emb * f_i_emb) / (torch.norm(f_ji_emb, p = 2) *  torch.norm(f_i_emb, p = 2))).reshape(1, 1, 1, 1)
-            # 1, c, 1, 1
-            w_ji.repeat(1, C, 1, 1)
-            f_list.append(f_ji)
-            w_list.append(w_ji)
-        # 2K, c, h, w
-        f = torch.concatenate(f_list, dim=0)
-        # 2K, c, 1, 1
-        w = torch.concatenate(w_list, dim=0)
-        # 1, c, h, w
-        f_i_aggregation = torch.sum(f * w / torch.sum(w), dim = 0, keepdim=True)
-        f_i_aggregation_list.append(f_i_aggregation)
-
-    feature_map_aggregation = torch.concatenate(f_i_aggregation_list)
-    return feature_map_aggregation
-
+            f_i_aggregation = torch.sum(f * w / torch.sum(w), dim = 0, keepdim=True)
+            f_i_aggregation_list.append(f_i_aggregation)
+        feature_maps_aggregation_list.append(torch.concatenate(f_i_aggregation_list))
+    return feature_maps_aggregation_list
 
 class FeatureExtractor(nn.Module):
     def __init__(self, model : nn.Module) -> None:

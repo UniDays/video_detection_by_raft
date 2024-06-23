@@ -54,7 +54,7 @@ def crop_like(input, target):
 class FlowNetS(nn.Module):
     expansion = 1
 
-    def __init__(self, batchNorm=True, pretrained=False):
+    def __init__(self, batchNorm=True):
         super(FlowNetS, self).__init__()
 
         self.batchNorm = batchNorm
@@ -93,15 +93,6 @@ class FlowNetS(nn.Module):
             elif isinstance(m, nn.BatchNorm2d):
                 constant_(m.weight, 1)
                 constant_(m.bias, 0)
-
-        if pretrained:
-            if batchNorm:
-                url = "https://drive.google.com/file/d/1396GYc-XdxNLdg8STprmE0RcN_Sza8p_/view?usp=drive_link"
-            else:
-                url = "https://drive.google.com/file/d/1jbWiY1C_nqAUJRYZu7mwzV6CK7ugsa5v/view?usp=drive_link"
-            checkpoint = torch.hub.load_state_dict_from_url(url=url, map_location="cpu", model_dir="./model_data")
-            self.load_state_dict(checkpoint, strict=False)
-            print("FlowNet load weights from ", url.split('/')[-1])
 
     def forward(self, x):
         out_conv2 = self.conv2(self.conv1(x))
